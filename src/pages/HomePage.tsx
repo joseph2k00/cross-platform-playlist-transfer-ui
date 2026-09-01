@@ -11,6 +11,7 @@ import { createPlaylist } from '../lib/api'
 import { PlaylistSelector } from '../components/PlaylistSelector'
 import { StepIndicator } from '../components/StepIndicator'
 import { PlatformIcon } from '../components/PlatformIcon'
+import { TransferModal } from '../components/TransferModal'
 
 export function HomePage() {
   const {
@@ -260,6 +261,9 @@ function DestinationStep({
 }) {
   const [transferring, setTransferring] = useState(false)
   const [transferError, setTransferError] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [completed, setCompleted] = useState(0)
+  const [currentName, setCurrentName] = useState<string | null>(null)
   const {
     apps,
     source,
@@ -277,32 +281,47 @@ function DestinationStep({
     selectedCount > 0 &&
     source !== destination
 
+  const total = selectedPlaylists.length
+
   async function handleTransfer() {
     if (!destination || !source) return
     setTransferring(true)
     setTransferError(null)
+    setModalOpen(true)
+    setCompleted(0)
+    setCurrentName(null)
     try {
       const dto = apps[source].playlists
       if (!dto) throw new Error('Source playlists unavailable.')
       if (selectedPlaylists.length === 0)
         throw new Error('No playlists selected.')
-      const payload: UserPlaylistDTO = {
-        ...dto,
-        count: selectedPlaylists.length,
-        playlists: selectedPlaylists.map((p) => ({ ...p })),
+      const token = apps[destination].token as string
+      for (let i = 0; i < selectedPlaylists.length; i++) {
+        const playlist = selectedPlaylists[i]
+        setCurrentName(playlist.name)
+        const payload: UserPlaylistDTO = {
+          ...dto,
+          count: 1,
+          playlists: [{ ...playlist }],
+        }
+        await createPlaylist(destination, token, payload)
+        setCompleted(i + 1)
       }
-      await createPlaylist(
-        destination,
-        apps[destination].token as string,
-        payload,
-      )
-      onDone()
+      setCurrentName(null)
+      setTransferring(false)
     } catch (err) {
+      setTransferring(false)
+      setCurrentName(null)
       setTransferError(
         err instanceof Error ? err.message : 'Transfer failed.',
       )
-      setTransferring(false)
     }
+  }
+
+  function handleCloseModal() {
+    setModalOpen(false)
+    setTransferring(false)
+    if (!transferError) onDone()
   }
 
   return (
@@ -424,6 +443,19 @@ function DestinationStep({
         <p className="mt-3 text-center text-sm text-red-400">
           {transferError}
         </p>
+      ) : null}
+
+      {source && destination ? (
+        <TransferModal
+          open={modalOpen}
+          transferring={transferring}
+          completed={completed}
+          total={total}
+          currentPlaylistName={transferError ? null : currentName}
+          source={source}
+          destination={destination}
+          onClose={handleCloseModal}
+        />
       ) : null}
     </div>
   )
